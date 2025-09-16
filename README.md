@@ -1,208 +1,221 @@
-# Simplified Port Scan Detector
+# Network Packet Analyzer - Setup Guide
 
-## Educational Version for Network Security
+A Windows-based network packet capture and analysis tool using Npcap library, designed for network security education and research.
 
-This is a simplified, educational version of [scanlogd](http://www.openwall.com/scanlogd/) designed to teach the core concepts of network-based intrusion detection systems (NIDS).
+## Overview
 
-## What is Port Scanning?
+This program captures network packets and outputs them in scanlogd format for analysis. It can operate in two modes:
 
-Port scanning is a reconnaissance technique used by attackers to discover open ports and services on target systems. By systematically attempting to connect to different ports, attackers can:
+- **Live Capture**: Captures packets from network interfaces in real-time
+- **File Analysis**: Processes existing PCAP files for offline analysis
 
-- Identify running services
-- Determine the operating system
-- Find potential vulnerabilities
-- Plan targeted attacks
+## Requirements
 
-## How This Program Works
+### Software Dependencies
 
-### 1. Packet Capture
+- **Windows 10/11** (64-bit recommended)
+- **Npcap** (packet capture library)
+- **Visual Studio** or **MinGW-w64** compiler
+- **Administrator privileges** (required for packet capture)
 
-- Uses **libpcap** to capture live network traffic
-- Filters for TCP packets only
-- Monitors network interface in promiscuous mode
+### Hardware Requirements
 
-### 2. State Tracking
+- Network interface card
+- Minimum 4GB RAM
+- 100MB free disk space
 
-- Maintains a **hash table** of source IP addresses
-- Tracks ports accessed by each IP
-- Uses **weighted scoring** system:
-  - Privileged ports (< 1024): weight = 3
-  - Regular ports (≥ 1024): weight = 1
+## Installation
 
-### 3. Detection Algorithm
+### 1. Install Npcap
 
-```
-For each TCP packet:
-    - Extract source IP and destination port
-    - Skip ACK packets (likely responses)
-    - Find/create host entry in hash table
-    - Check if port already seen
-    - Add port weight to total
-    - If total weight ≥ threshold → ALERT!
-```
+1. Download Npcap from: https://nmap.org/npcap/
+2. Run the installer **as Administrator**
+3. **Important**: During installation, check **"Install Npcap in WinPcap API-compatible Mode"**
+4. Reboot your system after installation
 
-### 4. Threshold-Based Detection
+### 2. Install Development Environment
 
-- **Weight Threshold**: 21 (7 privileged ports × 3)
-- **Time Window**: 3 seconds between accesses
-- **Maximum Hosts**: 256 concurrent tracking
+#### Option A: Visual Studio (Recommended)
 
-## Building and Running
+1. Download Visual Studio Community (free)
+2. Install with "Desktop development with C++" workload
+3. Ensure Windows 10/11 SDK is included
 
-### Prerequisites
+#### Option B: MinGW-w64
 
-- **libpcap** library (packet capture)
-- **GCC** compiler
-- **Root privileges** (for packet capture)
+1. Download from: https://www.mingw-w64.org/
+2. Add MinGW bin directory to PATH environment variable
+3. Verify installation: `gcc --version`
 
-### Installation on macOS
+### 3. Download Npcap SDK
 
-```bash
-# Install libpcap (if not already installed)
-brew install libpcap
+1. Download Npcap SDK from: https://nmap.org/npcap/
+2. Extract to a folder (e.g., `C:\npcap-sdk`)
+3. Note the paths to:
+   - Include directory: `C:\npcap-sdk\Include`
+   - Lib directory: `C:\npcap-sdk\Lib` or `C:\npcap-sdk\Lib\x64`
 
-# Build the program
-make
+## Compilation
 
-# Run with root privileges
-sudo ./scanlogd-simple [interface]
-```
+### Using Visual Studio
 
-### Example Usage
+1. Create a new "Empty Project" in Visual Studio
+2. Add the source file to your project
+3. Configure project properties:
+   - **Configuration Properties > C/C++ > General**
+     - Additional Include Directories: `C:\npcap-sdk\Include`
+   - **Configuration Properties > Linker > General**
+     - Additional Library Directories: `C:\npcap-sdk\Lib\x64` (for 64-bit)
+   - **Configuration Properties > Linker > Input**
+     - Additional Dependencies: Add `wpcap.lib` and `ws2_32.lib`
+4. Build the project (Ctrl+Shift+B)
 
-```bash
-# Monitor default interface
-sudo ./scanlogd-simple
-
-# Monitor specific interface (e.g., Wi-Fi)
-sudo ./scanlogd-simple en0
-
-# Monitor Ethernet
-sudo ./scanlogd-simple en1
-```
-
-## Testing the Detector
-
-### Generate Test Traffic
-
-Use **nmap** to simulate port scanning:
+### Using MinGW-w64
 
 ```bash
-# Quick port scan (will trigger alert)
-nmap -p 1-100 localhost
-
-# SYN scan
-nmap -sS -p 1-50 localhost
-
-# Full TCP connect scan
-nmap -sT -p 1-30 localhost
+gcc -o packet_analyzer.exe packet_analyzer.c -I"C:\npcap-sdk\Include" -L"C:\npcap-sdk\Lib\x64" -lwpcap -lws2_32
 ```
 
-### Expected Output
+### Using Command Line (if libraries in system path)
 
-When a scan is detected:
-
-```
-*** PORT SCAN DETECTED ***
-Source IP: 127.0.0.1
-Time: Mon Sep 16 15:30:45 2025
-Ports accessed: 15
-Total weight: 21 (threshold: 21)
-Duration: 2 seconds
-Port list: 22 80 443 21 25 53 ...
-TCP flags: SYN
+```bash
+gcc -o packet_analyzer.exe packet_analyzer.c -lwpcap -lws2_32
 ```
 
-## Learning Objectives
+## Usage
 
-### 1. Network Packet Analysis
+### Administrator Privileges
 
-- Understanding TCP/IP headers
-- Packet capture techniques
-- Network interface monitoring
+**Important**: The program must be run as Administrator to access network interfaces.
 
-### 2. Data Structures
+Right-click on Command Prompt → "Run as administrator"
 
-- Hash table implementation
-- State management
-- Efficient lookups
+### Live Packet Capture
 
-### 3. Security Concepts
-
-- Intrusion detection principles
-- Threshold-based alerting
-- False positive/negative considerations
-
-### 4. System Programming
-
-- Signal handling
-- Memory management
-- Cross-platform considerations
-
-## Code Structure
-
-```
-scanlogd-simple.c
-├── Configuration constants
-├── Data structures (host_entry)
-├── Hash table functions
-├── Packet processing logic
-├── Detection algorithm
-└── Main capture loop
+```bash
+# Capture 50 packets from default network interface
+packet_analyzer.exe
 ```
 
-## Key Differences from Original scanlogd
+### PCAP File Analysis
 
-### Simplified:
+```bash
+# Analyze existing PCAP file
+packet_analyzer.exe capture.pcap
+```
 
-- ✅ Single file implementation
-- ✅ Console output (not syslog)
-- ✅ No daemonization
-- ✅ No user privilege dropping
-- ✅ No chroot jail
-- ✅ Basic error handling
+## Output
 
-### Educational Features:
+### Console Output Format (scanlogd-style)
 
-- 📚 Detailed comments explaining concepts
-- 📚 Step-by-step algorithm walkthrough
-- 📚 Simple data structures
-- 📚 Easy to modify and experiment with
+```
+192.168.1.100:12345 to 10.0.0.1 ports 80, --A-----, TOS 00, TTL 64 @14:23:15
+```
 
-### Removed Complexity:
+### CSV File Output
 
-- ❌ Advanced TCP flag analysis
-- ❌ TOS/TTL tracking
-- ❌ Flood protection
-- ❌ Multiple capture interfaces
-- ❌ Configuration files
+- **Live capture**: `network_traffic_dataset.csv`
+- **File analysis**: `analysis_results.csv`
 
-## Limitations
+**CSV Format:**
 
-1. **Memory Bound**: Limited to 256 concurrent hosts
-2. **No Persistence**: State lost on restart
-3. **Basic Detection**: May have false positives/negatives
-4. **Single Interface**: Monitors one interface at a time
+```csv
+timestamp,source,destination,ports,tcp_flags,tos,ttl,time_str
+1640995200,"192.168.1.100:12345","10.0.0.1","80","--A-----","00","64","14:23:15"
+```
 
-## Extensions for Students
+## TCP Flags Reference
 
-Try modifying the code to:
+- **C** = CWR (Congestion Window Reduced)
+- **E** = ECE (ECN Echo)
+- **U** = URG (Urgent)
+- **A** = ACK (Acknowledgment)
+- **P** = PSH (Push)
+- **R** = RST (Reset)
+- **S** = SYN (Synchronize)
+- **F** = FIN (Finish)
 
-- Add JSON output format
-- Implement different detection algorithms
-- Add IP whitelisting
-- Track connection success/failure
-- Add graphical interface
-- Support multiple interfaces
-- Implement persistent storage
+## Troubleshooting
 
-## Further Reading
+### Common Issues
 
-- [Original scanlogd](http://www.openwall.com/scanlogd/)
-- [libpcap documentation](https://www.tcpdump.org/manpages/pcap.3pcap.html)
-- [TCP/IP Illustrated](https://en.wikipedia.org/wiki/TCP/IP_Illustrated)
-- [Network Security Essentials](https://www.pearson.com/us/higher-education/program/Stallings-Network-Security-Essentials-6th-Edition/PGM332505.html)
+#### "Error finding devices"
 
-## License
+- **Solution**: Install Npcap with WinPcap API-compatible mode
+- Verify Npcap service is running: `sc query npcap`
 
-Educational use only. Based on the BSD-licensed scanlogd by Solar Designer.
+#### "Could not open device"
+
+- **Solution**: Run program as Administrator
+- Check Windows Firewall settings
+
+#### Compilation errors
+
+- **wpcap.lib not found**: Verify Npcap SDK paths in compiler settings
+- **pcap.h not found**: Add Npcap Include directory to compiler include paths
+
+#### No packets captured
+
+- Check network activity during capture
+- Try different network interface
+- Disable antivirus temporarily (may block packet capture)
+
+### Verification Steps
+
+1. **Check Npcap installation**:
+
+   ```cmd
+   sc query npcap
+   ```
+
+   Should show "RUNNING" status
+
+2. **Verify network interfaces**:
+
+   ```cmd
+   ipconfig /all
+   ```
+
+   Note active interfaces
+
+3. **Test with Wireshark** (if available):
+   - If Wireshark can capture packets, this tool should work too
+
+## Educational Use
+
+This tool is designed for:
+
+- Network security education
+- Protocol analysis learning
+- Dataset generation for research
+- Understanding packet capture fundamentals
+
+## Security Notes
+
+- **Use responsibly**: Only capture traffic on networks you own or have permission to monitor
+- **Privacy**: Be aware of data protection laws in your jurisdiction
+- **Firewall**: Some security software may flag packet capture as suspicious behavior
+
+## Support
+
+For technical issues:
+
+1. Verify all requirements are met
+2. Check Windows Event Viewer for system errors
+3. Test with minimal antivirus interference
+4. Ensure latest Npcap version is installed
+
+## File Structure
+
+```
+project/
+├── packet_analyzer.c       # Main source code
+├── packet_analyzer.exe     # Compiled executable
+├── network_traffic_dataset.csv  # Output (live capture)
+├── analysis_results.csv    # Output (file analysis)
+└── README.md              # This file
+```
+
+---
+
+**Note**: This tool is for educational purposes. Always comply with local laws and network policies when capturing network traffic.
