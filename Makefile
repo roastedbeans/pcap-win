@@ -6,8 +6,8 @@
 ifeq ($(OS),Windows_NT)
     PLATFORM = WINDOWS
     CC = gcc
-    CFLAGS = -Wall -O2 -std=c99 -D_WIN32
-    LDFLAGS = -lpcap -lws2_32 -liphlpapi
+    CFLAGS = -Wall -O2 -std=c99 -D_WIN32 -I"C:\npcap-sdk\Include"
+    LDFLAGS = -L"C:\npcap-sdk\Lib\x64" -lwpcap -lws2_32 -liphlpapi
     TARGET = pcap-win.exe
     RM = del /Q
 else

@@ -1,252 +1,137 @@
-# Network Packet Analyzer - Setup Guide
+# Network Packet Analyzer
 
-A Windows-based network packet capture and analysis tool using Npcap library, designed for network security education and research.
+> A Windows-based TCP/UDP packet capture tool using Npcap for network security education and research.
 
-## Overview
+## 🎯 Overview
 
-This program captures network packets and outputs them in scanlogd format for analysis. It can operate in two modes:
+This program captures and analyzes network packets in real-time, outputting data in CSV format for security research. Features automatic WiFi detection and optimized TCP/UDP monitoring.
 
-- **Live Capture**: Captures packets from network interfaces in real-time
-- **File Analysis**: Processes existing PCAP files for offline analysis
+## ⚡ Quick Setup
 
-## Requirements
+### Prerequisites
+- **Windows 10/11** (64-bit)
+- **Npcap** installed (download from https://nmap.org/npcap/)
+- **Administrator privileges** for live capture
 
-### Software Dependencies
+### Installation
+```bash
+# Install MinGW-w64 compiler
+winget install BrechtSanders.WinLibs.POSIX.UCRT --accept-source-agreements
 
-- **Windows 10/11** (64-bit recommended)
-- **Npcap** (packet capture library)
-- **Visual Studio** or **MinGW-w64** compiler
-- **Administrator privileges** (required for packet capture)
+# Verify installation
+gcc --version
+mingw32-make --version
+sc query npcap  # Should show RUNNING
+```
 
-### Hardware Requirements
+### Build & Run
+```bash
+# Compile the program
+mingw32-make all
 
-- Network interface card
-- Minimum 4GB RAM
-- 100MB free disk space
+# Run (use Administrator for live capture)
+.\pcap-win.exe
+```
 
-## Installation
+## 🎮 Usage Guide
 
-### 1. Install Npcap
+### Input Options
 
-1. Download Npcap from: https://nmap.org/npcap/
-2. Run the installer **as Administrator**
-3. **Important**: During installation, check **"Install Npcap in WinPcap API-compatible Mode"**
-4. Reboot your system after installation
+The program provides three capture modes:
 
-### 2. Install Development Environment
+1. **Live TCP/UDP Capture** - Real-time network monitoring
+2. **PCAP File Analysis** - Process saved packet captures
+3. **Custom Packet Testing** - Generate synthetic traffic
 
-#### Option A: Visual Studio (Recommended)
-
-1. Download Visual Studio Community (free)
-2. Install with "Desktop development with C++" workload
-3. Ensure Windows 10/11 SDK is included
-
-#### Option B: MinGW-w64
-
-1. Download from: https://www.mingw-w64.org/
-2. Add MinGW bin directory to PATH environment variable
-3. Verify installation: `gcc --version`
-
-### 3. Download Npcap SDK
-
-1. Download Npcap SDK from: https://nmap.org/npcap/
-2. Extract to a folder (e.g., `C:\npcap-sdk`)
-3. Note the paths to:
-   - Include directory: `C:\npcap-sdk\Include`
-   - Lib directory: `C:\npcap-sdk\Lib` or `C:\npcap-sdk\Lib\x64`
-
-## Compilation
-
-### Using Visual Studio
-
-1. Create a new "Empty Project" in Visual Studio
-2. Add the source file to your project
-3. Configure project properties:
-   - **Configuration Properties > C/C++ > General**
-     - Additional Include Directories: `C:\npcap-sdk\Include`
-   - **Configuration Properties > Linker > General**
-     - Additional Library Directories: `C:\npcap-sdk\Lib\x64` (for 64-bit)
-   - **Configuration Properties > Linker > Input**
-     - Additional Dependencies: Add `wpcap.lib` and `ws2_32.lib`
-4. Build the project (Ctrl+Shift+B)
-
-### Using MinGW-w64
+### Usage Examples
 
 ```bash
-gcc -o packet_analyzer.exe packet_analyzer.c -I"C:\npcap-sdk\Include" -L"C:\npcap-sdk\Lib\x64" -lwpcap -lws2_32
+# Interactive mode (recommended)
+.\pcap-win.exe
+# Choose: 1) Live capture  2) PCAP analysis  3) Test packets
+
+# Direct PCAP file analysis
+.\pcap-win.exe capture.pcap
+
+# Live capture with automatic WiFi detection
+.\pcap-win.exe
+# Select option 1 for live TCP/UDP monitoring
 ```
 
-### Using Command Line (if libraries in system path)
+### ⚠️ Important Notes
 
-```bash
-gcc -o packet_analyzer.exe packet_analyzer.c -lwpcap -lws2_32
+- **Administrator Rights Required**: Live capture needs admin privileges
+- **WiFi Recommended**: Best results with WiFi interfaces for network-wide monitoring
+- **Automatic Detection**: Program automatically finds and uses optimal network interface
+
+## 📊 Output Formats
+
+### Real-time Console Display
+```
+192.168.1.100:12345 to 10.0.0.1 ports 80, --S-----, TOS 00, TTL 64 @14:23:15
+192.168.1.100:12346 to 10.0.0.1 ports 443, ---A----, TOS 00, TTL 64 @14:23:16
 ```
 
-## Usage
+### CSV Data Files
+- **Live Capture**: `network_traffic_dataset.csv`
+- **PCAP Analysis**: `analysis_results.csv`
+- **Test Packets**: `test_packets.csv`
 
-### Administrator Privileges
-
-**Important**: The program must be run as Administrator to access network interfaces.
-
-Right-click on Command Prompt → "Run as administrator"
-
-### Interactive Interface
-
-The program now features an interactive menu for easy operation:
-
-1. **Choose Analysis Mode**: Select between live packet capture or PCAP file analysis
-2. **Interface Selection**: For live capture, choose from available network interfaces
-3. **File Input**: For PCAP analysis, enter the filename to analyze
-
-### Command Line Usage
-
-You can still bypass the interactive menu by providing a PCAP filename directly:
-
-```bash
-# Analyze PCAP file directly (bypasses interactive menu)
-packet_analyzer.exe capture.pcap
-```
-
-### Live Packet Capture
-
-When choosing live capture mode interactively:
-
-```bash
-packet_analyzer.exe
-# Then follow the on-screen prompts:
-# 1. Choose "1" for live capture
-# 2. Select interface number from the list
-```
-
-### PCAP File Analysis
-
-When choosing PCAP analysis mode interactively:
-
-```bash
-packet_analyzer.exe
-# Then follow the on-screen prompts:
-# 1. Choose "2" for PCAP analysis
-# 2. Enter the PCAP filename when prompted
-```
-
-## Output
-
-### Console Output Format (scanlogd-style)
-
-```
-192.168.1.100:12345 to 10.0.0.1 ports 80, --A-----, TOS 00, TTL 64 @14:23:15
-```
-
-### CSV File Output
-
-- **Live capture**: `network_traffic_dataset.csv`
-- **File analysis**: `analysis_results.csv`
-
-**CSV Generation Process:**
-
-1. **Header Creation**: CSV file is initialized with headers before data collection begins
-2. **Periodic Append**: During live capture, new packet data is appended to the CSV file every 2 seconds
-3. **Final Save**: Complete dataset is saved at the end of capture/analysis
-
-**CSV Format:**
-
+### CSV Structure
 ```csv
 timestamp,source,destination,ports,tcp_flags,tos,ttl,time_str
-1640995200,"192.168.1.100:12345","10.0.0.1","80","--A-----","00","64","14:23:15"
+1640995200,"192.168.1.100:12345","10.0.0.1","80","--S-----","00","64","14:23:15"
 ```
 
-## TCP Flags Reference
-
-- **C** = CWR (Congestion Window Reduced)
-- **E** = ECE (ECN Echo)
-- **U** = URG (Urgent)
+### TCP Flags Legend
+- **S** = SYN (Connection start)
 - **A** = ACK (Acknowledgment)
-- **P** = PSH (Push)
-- **R** = RST (Reset)
-- **S** = SYN (Synchronize)
-- **F** = FIN (Finish)
+- **P** = PSH (Push data)
+- **R** = RST (Reset connection)
+- **F** = FIN (Connection end)
+- **U** = URG (Urgent data)
+- **E** = ECE (ECN Echo)
+- **C** = CWR (Congestion Window Reduced)
 
-## Troubleshooting
+## 🔧 Troubleshooting
 
 ### Common Issues
 
-#### "Error finding devices"
+| Problem | Solution |
+|---------|----------|
+| **GCC not found** | Install MinGW: `winget install BrechtSanders.WinLibs.POSIX.UCRT --accept-source-agreements` |
+| **Npcap error** | Check service: `sc query npcap` (should show RUNNING) |
+| **Permission denied** | Run as Administrator |
+| **No packets captured** | Check WiFi connection and network activity |
+| **Build errors** | Ensure Npcap SDK is installed |
 
-- **Solution**: Install Npcap with WinPcap API-compatible mode
-- Verify Npcap service is running: `sc query npcap`
+### Quick Verification
+```bash
+gcc --version                    # Check compiler
+mingw32-make --version          # Check build tool
+sc query npcap                  # Check Npcap service
+```
 
-#### "Could not open device"
-
-- **Solution**: Run program as Administrator
-- Check Windows Firewall settings
-
-#### Compilation errors
-
-- **wpcap.lib not found**: Verify Npcap SDK paths in compiler settings
-- **pcap.h not found**: Add Npcap Include directory to compiler include paths
-
-#### No packets captured
-
-- Check network activity during capture
-- Try different network interface
-- Disable antivirus temporarily (may block packet capture)
-
-### Verification Steps
-
-1. **Check Npcap installation**:
-
-   ```cmd
-   sc query npcap
-   ```
-
-   Should show "RUNNING" status
-
-2. **Verify network interfaces**:
-
-   ```cmd
-   ipconfig /all
-   ```
-
-   Note active interfaces
-
-3. **Test with Wireshark** (if available):
-   - If Wireshark can capture packets, this tool should work too
-
-## Educational Use
-
-This tool is designed for:
-
-- Network security education
-- Protocol analysis learning
-- Dataset generation for research
-- Understanding packet capture fundamentals
-
-## Security Notes
-
-- **Use responsibly**: Only capture traffic on networks you own or have permission to monitor
-- **Privacy**: Be aware of data protection laws in your jurisdiction
-- **Firewall**: Some security software may flag packet capture as suspicious behavior
-
-## Support
-
-For technical issues:
-
-1. Verify all requirements are met
-2. Check Windows Event Viewer for system errors
-3. Test with minimal antivirus interference
-4. Ensure latest Npcap version is installed
-
-## File Structure
+## 📁 Project Files
 
 ```
-project/
-├── packet_analyzer.c       # Main source code
-├── packet_analyzer.exe     # Compiled executable
-├── network_traffic_dataset.csv  # Output (live capture)
-├── analysis_results.csv    # Output (file analysis)
-└── README.md              # This file
+pcap-win/
+├── pcap-win.c              # Main source code
+├── pcap-win.exe            # Compiled executable
+├── Makefile                # Build configuration
+├── network_traffic_dataset.csv  # Live capture output
+├── analysis_results.csv    # PCAP analysis output
+├── test_packets.csv        # Test packet output
+└── README.md               # This guide
 ```
+
+## ⚖️ Legal & Security
+
+- **Educational Use Only**: Designed for network security learning
+- **Responsible Usage**: Only capture traffic on authorized networks
+- **Privacy Compliance**: Follow local data protection laws
+- **Administrator Rights**: Required for live packet capture
 
 ---
 
-**Note**: This tool is for educational purposes. Always comply with local laws and network policies when capturing network traffic.
+*Built with Npcap and MinGW-w64 for Windows network analysis.*

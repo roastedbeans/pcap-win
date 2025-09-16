@@ -1,9 +1,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <pcap/pcap.h>
+#include <errno.h>
+#include <signal.h>
+#include <pcap.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <windows.h> // For Sleep function
 #include <time.h>
 
 #pragma comment(lib, "wpcap.lib")
@@ -69,7 +72,13 @@ void ip_to_string(u_int ip_addr, char *ip_string)
 {
     struct in_addr addr;
     addr.s_addr = ip_addr;
-    strcpy(ip_string, inet_ntoa(addr));
+    const char *result = inet_ntoa(addr);
+    if (result) {
+        strncpy(ip_string, result, 15); // 15 chars max for IPv4 + null terminator
+        ip_string[15] = '\0'; // Ensure null termination
+    } else {
+        strcpy(ip_string, "0.0.0.0"); // Fallback
+    }
 }
 
 // Function to classify traffic patterns (basic heuristics)
@@ -138,7 +147,7 @@ void initialize_csv_file(const char *filename)
     FILE *file = fopen(filename, "w");
     if (!file)
     {
-        printf("Error: Cannot create CSV file %s\n", filename);
+        printf("Error: Cannot create CSV file '%s': %s\n", filename, strerror(errno));
         return;
     }
 
@@ -151,15 +160,15 @@ void initialize_csv_file(const char *filename)
 // Function to append new data to existing CSV file
 void append_dataset_csv(const char *filename, int start_index)
 {
-    if (start_index >= dataset_count)
+    if (start_index >= dataset_count || start_index < 0)
     {
-        return; // No new data to append
+        return; // No new data to append or invalid index
     }
 
     FILE *file = fopen(filename, "a"); // Append mode
     if (!file)
     {
-        printf("Error: Cannot open CSV file for appending\n");
+        printf("Error: Cannot open CSV file '%s' for appending: %s\n", filename, strerror(errno));
         return;
     }
 
@@ -171,9 +180,13 @@ void append_dataset_csv(const char *filename, int start_index)
 
         struct tm *timeinfo = localtime(&dataset[i].timestamp);
         char time_str[16];
-        strftime(time_str, sizeof(time_str), "%H:%M:%S", timeinfo);
+        if (timeinfo) {
+            strftime(time_str, sizeof(time_str), "%H:%M:%S", timeinfo);
+        } else {
+            strcpy(time_str, "00:00:00"); // Fallback
+        }
 
-        fprintf(file, "%ld,\"%s:%d\",\"%s\",\"%d\",\"%s\",\"00\",\"64\",\"%s\"\n",
+        fprintf(file, "%lld,\"%s:%d\",\"%s\",\"%d\",\"%s\",\"00\",\"64\",\"%s\"\n",
                 dataset[i].timestamp,
                 dataset[i].src_ip, dataset[i].src_port,
                 dataset[i].dst_ip,
@@ -192,7 +205,7 @@ void save_dataset_csv(const char *filename)
     FILE *file = fopen(filename, "w");
     if (!file)
     {
-        printf("Error: Cannot create dataset file\n");
+        printf("Error: Cannot create dataset file '%s': %s\n", filename, strerror(errno));
         return;
     }
 
@@ -207,9 +220,13 @@ void save_dataset_csv(const char *filename)
 
         struct tm *timeinfo = localtime(&dataset[i].timestamp);
         char time_str[16];
-        strftime(time_str, sizeof(time_str), "%H:%M:%S", timeinfo);
+        if (timeinfo) {
+            strftime(time_str, sizeof(time_str), "%H:%M:%S", timeinfo);
+        } else {
+            strcpy(time_str, "00:00:00"); // Fallback
+        }
 
-        fprintf(file, "%ld,\"%s:%d\",\"%s\",\"%d\",\"%s\",\"00\",\"64\",\"%s\"\n",
+        fprintf(file, "%lld,\"%s:%d\",\"%s\",\"%d\",\"%s\",\"00\",\"64\",\"%s\"\n",
                 dataset[i].timestamp,
                 dataset[i].src_ip, dataset[i].src_port,
                 dataset[i].dst_ip,
@@ -225,6 +242,12 @@ void save_dataset_csv(const char *filename)
 // Function to load and display basic packet statistics
 void analyze_dataset()
 {
+    if (dataset_count == 0) {
+        printf("\n📊 Packet Statistics:\n");
+        printf("No packets captured.\n");
+        return;
+    }
+
     int tcp_count = 0, udp_count = 0, other_count = 0;
 
     for (int i = 0; i < dataset_count; i++)
@@ -237,11 +260,23 @@ void analyze_dataset()
             other_count++;
     }
 
-    printf("\n=== PACKET STATISTICS ===\n");
+    printf("\n📊 Packet Statistics:\n");
     printf("Total packets captured: %d\n", dataset_count);
     printf("TCP packets: %d (%.1f%%)\n", tcp_count, (float)tcp_count / dataset_count * 100);
     printf("UDP packets: %d (%.1f%%)\n", udp_count, (float)udp_count / dataset_count * 100);
     printf("Other packets: %d (%.1f%%)\n", other_count, (float)other_count / dataset_count * 100);
+}
+
+// Function to cleanup resources
+void cleanup_resources()
+{
+    // Close any open file handles
+    if (output_file) {
+        fclose(output_file);
+        output_file = NULL;
+    }
+
+    // Any other cleanup would go here
 }
 
 // Signal handler for graceful exit
@@ -254,6 +289,8 @@ void signal_handler(int signum)
         append_dataset_csv("network_traffic_dataset.csv", 0);
         analyze_dataset();
     }
+
+    cleanup_resources();
     exit(0);
 }
 
@@ -265,11 +302,20 @@ void packet_handler(u_char *user_data, const struct pcap_pkthdr *pkthdr, const u
     if (dataset_count >= 1000)
         return; // Limit dataset size
 
+    // Bounds checking for packet size
+    if (pkthdr->len < sizeof(ethernet_header)) {
+        return; // Packet too small for Ethernet header
+    }
+
     ethernet_header *eth_header = (ethernet_header *)packet;
 
     // Check if it's an IP packet
     if (ntohs(eth_header->type) == 0x0800)
     {                                                   // IPv4
+        if (pkthdr->len < 14 + sizeof(ip_header)) {
+            return; // Packet too small for IP header
+        }
+
         ip_header *ip_hdr = (ip_header *)(packet + 14); // Skip ethernet header
 
         // Initialize packet data structure
@@ -287,6 +333,9 @@ void packet_handler(u_char *user_data, const struct pcap_pkthdr *pkthdr, const u
         if (ip_hdr->proto == 6)
         { // TCP
             int ip_header_len = (ip_hdr->ver_ihl & 0x0f) * 4;
+            if (ip_header_len < 20 || pkthdr->len < 14 + ip_header_len + sizeof(tcp_header)) {
+                return; // Invalid IP header length or packet too small for TCP header
+            }
             tcp_header *tcp_hdr = (tcp_header *)(packet + 14 + ip_header_len);
 
             pkt->src_port = ntohs(tcp_hdr->sport);
@@ -297,6 +346,9 @@ void packet_handler(u_char *user_data, const struct pcap_pkthdr *pkthdr, const u
         { // UDP
             // For UDP, we'll extract ports similarly
             int ip_header_len = (ip_hdr->ver_ihl & 0x0f) * 4;
+            if (ip_header_len < 20 || pkthdr->len < 14 + ip_header_len + 4) {
+                return; // Invalid IP header length or packet too small for UDP ports
+            }
             u_short *udp_ports = (u_short *)(packet + 14 + ip_header_len);
             pkt->src_port = ntohs(udp_ports[0]);
             pkt->dst_port = ntohs(udp_ports[1]);
@@ -311,7 +363,11 @@ void packet_handler(u_char *user_data, const struct pcap_pkthdr *pkthdr, const u
 
         struct tm *timeinfo = localtime(&pkt->timestamp);
         char time_str[16];
-        strftime(time_str, sizeof(time_str), "%H:%M:%S", timeinfo);
+        if (timeinfo) {
+            strftime(time_str, sizeof(time_str), "%H:%M:%S", timeinfo);
+        } else {
+            strcpy(time_str, "00:00:00"); // Fallback
+        }
 
         // Format similar to scanlogd output
         printf("%s:%d to %s ports %d, %s, TOS %02x, TTL %d @%s\n",
@@ -335,13 +391,151 @@ void packet_handler(u_char *user_data, const struct pcap_pkthdr *pkthdr, const u
     }
 }
 
+// Function to create and analyze custom test packets
+void create_custom_test_packet()
+{
+    printf("\n🎯 Continuous Test Mode: Generating packets until Ctrl+C\n\n");
+
+    // Reset dataset for test
+    dataset_count = 0;
+
+    char src_ip[16], dst_ip[16];
+    int src_port, dst_port;
+
+    // Get user input for packet specifications
+    printf("Enter source IP address (e.g., 192.168.1.100): ");
+    if (scanf("%15s", src_ip) != 1) {
+        printf("Error reading source IP.\n");
+        return;
+    }
+
+    printf("Enter destination IP address (e.g., 10.0.0.1): ");
+    if (scanf("%15s", dst_ip) != 1) {
+        printf("Error reading destination IP.\n");
+        return;
+    }
+
+    printf("Enter source port (1-65535, or press Enter for random): ");
+    char port_input[256];
+    fgets(port_input, sizeof(port_input), stdin);
+    port_input[strcspn(port_input, "\n")] = 0; // Remove newline
+
+    if (strlen(port_input) == 0) {
+        src_port = 10000 + (rand() % 55535); // Random ephemeral port
+        printf("Using random source port: %d\n", src_port);
+    } else {
+        src_port = atoi(port_input);
+        if (src_port < 1 || src_port > 65535) {
+            src_port = 10000 + (rand() % 55535);
+            printf("Invalid port. Using random source port: %d\n", src_port);
+        }
+    }
+
+    printf("Enter destination port (1-65535, or press Enter for common service): ");
+    fgets(port_input, sizeof(port_input), stdin);
+    port_input[strcspn(port_input, "\n")] = 0; // Remove newline
+
+    if (strlen(port_input) == 0) {
+        // Use common service ports for testing
+        int common_ports[] = {80, 443, 22, 21, 53, 25, 110, 143, 993, 995};
+        dst_port = common_ports[rand() % 10];
+        printf("Using random common destination port: %d\n", dst_port);
+    } else {
+        dst_port = atoi(port_input);
+        if (dst_port < 1 || dst_port > 65535) {
+            dst_port = 80;
+            printf("Invalid port. Using destination port: %d\n", dst_port);
+        }
+    }
+
+    printf("Source: %s:%d → Destination: %s:%d - Press Ctrl+C to stop\n\n", src_ip, src_port, dst_ip, dst_port);
+
+    // Generate synthetic packets continuously
+    int packet_count = 0;
+    while (dataset_count < 1000)  // Safety limit to prevent infinite memory usage
+    {
+        packet_data *pkt = &dataset[dataset_count];
+
+        // Set packet data
+        pkt->timestamp = time(NULL); // Current time
+        pkt->protocol = 6; // TCP
+        pkt->packet_size = 100 + (rand() % 900); // Random size 100-1000
+        pkt->tcp_flags = 0x02; // SYN flag for most packets
+
+        // Copy IP addresses (safe copy)
+        strncpy(pkt->src_ip, src_ip, sizeof(pkt->src_ip) - 1);
+        pkt->src_ip[sizeof(pkt->src_ip) - 1] = '\0';
+
+        strncpy(pkt->dst_ip, dst_ip, sizeof(pkt->dst_ip) - 1);
+        pkt->dst_ip[sizeof(pkt->dst_ip) - 1] = '\0';
+
+        // Set ports with slight variation for realism
+        pkt->src_port = src_port + (packet_count % 100); // Small variation
+        pkt->dst_port = dst_port;
+
+        // Vary TCP flags for different packets to simulate realistic traffic
+        int flag_variation = packet_count % 5;
+        if (flag_variation == 0) pkt->tcp_flags = 0x02; // SYN - new connection
+        else if (flag_variation == 1) pkt->tcp_flags = 0x10; // ACK - response
+        else if (flag_variation == 2) pkt->tcp_flags = 0x18; // PSH+ACK - data
+        else if (flag_variation == 3) pkt->tcp_flags = 0x11; // FIN+ACK - close
+        else pkt->tcp_flags = 0x04; // RST - reset
+
+        // Classify the packet
+        classify_packet(pkt);
+
+        // Display packet info (similar to live capture)
+        char tcp_flags_str[9];
+        tcp_flags_to_string(pkt->tcp_flags, tcp_flags_str);
+
+        struct tm *timeinfo = localtime(&pkt->timestamp);
+        char time_str[16];
+        if (timeinfo) {
+            strftime(time_str, sizeof(time_str), "%H:%M:%S", timeinfo);
+        } else {
+            strcpy(time_str, "00:00:00");
+        }
+
+        printf("Packet #%d: %s:%d to %s ports %d, %s, TOS %02x, TTL %d @%s\n",
+               packet_count + 1,
+               pkt->src_ip, pkt->src_port,
+               pkt->dst_ip, pkt->dst_port,
+               tcp_flags_str,
+               rand() % 256, // Random TOS
+               64, // Standard TTL
+               time_str);
+
+        dataset_count++;
+        packet_count++;
+
+        // Add a small delay between packets (100-500ms) for realistic timing
+        #ifdef _WIN32
+            Sleep(100 + (rand() % 400)); // Windows Sleep in milliseconds
+        #else
+            usleep((100 + (rand() % 400)) * 1000); // Unix usleep in microseconds
+        #endif
+    }
+
+    printf("\n✓ Generation stopped: %d packets generated", packet_count);
+    if (dataset_count >= 1000) printf(" (safety limit reached)");
+    printf("\n\n");
+
+    // Analyze the generated test data
+    analyze_dataset();
+
+    // Save to CSV for further analysis
+    initialize_csv_file("test_packets.csv");
+    save_dataset_csv("test_packets.csv");
+    printf("Test data saved to 'test_packets.csv'\n");
+}
+
 // Function to demonstrate reading from a pcap file
 void analyze_pcap_file(const char *filename)
 {
     char errbuf[PCAP_ERRBUF_SIZE];
     pcap_t *handle;
 
-    printf("\n=== ANALYZING PCAP FILE: %s ===\n", filename);
+    printf("\n🎯 Analyzing PCAP file: %s\n", filename);
 
     handle = pcap_open_offline(filename, errbuf);
     if (handle == NULL)
@@ -367,11 +561,13 @@ void analyze_pcap_file(const char *filename)
 
 int main(int argc, char *argv[])
 {
-    printf("Network Security - Packet Analysis Tutorial\n");
-    printf("===========================================\n\n");
+    printf("Packet Analysis - Choose mode: 1)Live TCP/UDP 2)PCAP file 3)Test packets\n");
 
     // Set up signal handler for graceful exit
     signal(SIGINT, signal_handler);
+
+    // Seed random number generator for test packet generation
+    srand((unsigned int)time(NULL));
 
     // Check if user wants to analyze a pcap file from command line
     if (argc > 1)
@@ -388,36 +584,53 @@ int main(int argc, char *argv[])
     int interface_choice = 0;
 
     printf("Choose analysis mode:\n");
-    printf("1. Live packet capture\n");
+    printf("1. Live TCP/UDP capture (WiFi recommended)\n");
     printf("2. Analyze PCAP file\n");
-    printf("Enter choice (1 or 2): ");
+    printf("3. Continuous packet testing\n");
+    printf("Enter choice (1, 2, or 3): ");
 
-    while (scanf("%d", &choice) != 1 || (choice != 1 && choice != 2))
-    {
-        printf("Invalid choice. Please enter 1 for live capture or 2 for PCAP analysis: ");
-        // Clear input buffer
-        while (getchar() != '\n')
-            ;
+    while (1) {
+        if (scanf("%d", &choice) != 1) {
+            printf("Error reading input. Please enter 1, 2, or 3: ");
+            while (getchar() != '\n'); // Clear input buffer
+            continue;
+        }
+        if (choice >= 1 && choice <= 3) {
+            break;
+        }
+        printf("Invalid choice. Please enter 1 for live TCP/UDP capture, 2 for PCAP analysis, or 3 for continuous testing: ");
+        while (getchar() != '\n'); // Clear input buffer
     }
 
     if (choice == 2)
     {
         // PCAP file analysis mode
         printf("Enter PCAP filename: ");
-        scanf("%255s", pcap_filename); // Limit to prevent buffer overflow
+        if (scanf("%255s", pcap_filename) != 1) {
+            printf("Error reading filename.\n");
+            return 1;
+        }
         initialize_csv_file("analysis_results.csv");
         analyze_pcap_file(pcap_filename);
         save_dataset_csv("analysis_results.csv");
         return 0;
     }
+    else if (choice == 3)
+    {
+        // Custom packet testing mode
+        create_custom_test_packet();
+        return 0;
+    }
 
-    // Live capture mode - find and list available devices
+    // Live capture mode - find and prioritize WiFi interfaces for TCP/UDP capture
     pcap_if_t *alldevs;
     pcap_if_t *device;
     pcap_t *handle;
     char errbuf[PCAP_ERRBUF_SIZE];
     int i = 0;
     pcap_if_t *device_list[20]; // Store up to 20 devices for selection
+    int wifi_interfaces[20]; // Track WiFi interface indices
+    int wifi_count = 0;
 
     // Find all available devices
     if (pcap_findalldevs(&alldevs, errbuf) == -1)
@@ -426,47 +639,60 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    // List available devices
-    printf("\nAvailable network interfaces:\n");
+    // Auto-detect and use WiFi interface for TCP/UDP capture
+    printf("\n🎯 Auto-detecting WiFi interface for TCP/UDP capture...\n");
+
     for (device = alldevs; device != NULL && i < 20; device = device->next)
     {
         device_list[i] = device;
-        printf("%d. %s", i + 1, device->name);
-        if (device->description)
-        {
-            printf(" (%s)", device->description);
+
+        // Check if this is a WiFi interface (comprehensive detection)
+        if ((device->description &&
+             (strstr(device->description, "Wireless") ||
+              strstr(device->description, "Wi-Fi") ||
+              strstr(device->description, "WiFi") ||
+              strstr(device->description, "802.11") ||
+              strstr(device->description, "WLAN") ||
+              strstr(device->description, "Wireless LAN"))) ||
+            (device->name &&
+             (strstr(device->name, "wlan") ||
+              strstr(device->name, "wifi") ||
+              strstr(device->name, "wireless")))) {
+            wifi_interfaces[wifi_count++] = i;
         }
-        printf("\n");
         i++;
     }
 
     if (i == 0)
     {
-        printf("No devices found. Make sure Npcap is installed.\n");
+        printf("❌ No network devices found. Please ensure Npcap is installed.\n");
         pcap_freealldevs(alldevs);
         return 1;
     }
 
-    // Request interface selection
-    printf("Enter interface number (1-%d): ", i);
-    while (scanf("%d", &interface_choice) != 1 ||
-           interface_choice < 1 || interface_choice > i)
-    {
-        printf("Invalid interface number. Please enter a number between 1 and %d: ", i);
-        while (getchar() != '\n')
-            ;
+    // Auto-select primary WiFi interface
+    if (wifi_count > 0) {
+        interface_choice = wifi_interfaces[0] + 1; // Use first WiFi interface
+        printf("✅ WiFi interface detected and ready for TCP/UDP capture\n");
+    } else {
+        printf("⚠️  No WiFi interfaces found. Using primary network interface.\n");
+        printf("   Note: Ethernet capture is limited to local traffic only.\n");
+        interface_choice = 1; // Fallback to first available interface
     }
 
     // Use selected device
     device = device_list[interface_choice - 1];
-    printf("\nUsing interface: %s\n", device->name);
+    printf("🎯 Ready: TCP/UDP capture on %s", device->name);
+    if (device->description) printf(" (%s)", device->description);
+    printf("\n\n");
 
     // Initialize CSV file with header before starting capture
     initialize_csv_file("network_traffic_dataset.csv");
     last_csv_append = time(NULL); // Initialize the append timer
 
-    // Open device for live capture
-    handle = pcap_open_live(device->name, BUFSIZ, 1, 1000, errbuf);
+    // Open device for comprehensive TCP/UDP capture
+    // Parameters: device, snaplen, promiscuous mode, timeout, error buffer
+    handle = pcap_open_live(device->name, 65536, 1, 100, errbuf);
     if (handle == NULL)
     {
         fprintf(stderr, "Could not open device %s: %s\n", device->name, errbuf);
@@ -474,8 +700,27 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    printf("\n=== LIVE PACKET CAPTURE ===\n");
-    printf("Starting packet capture... Press Ctrl+C to stop.\n\n");
+    printf("📡 Starting TCP/UDP capture (promiscuous mode) - Press Ctrl+C to stop\n\n");
+
+    // Set filter to capture only TCP and UDP packets for comprehensive monitoring
+    struct bpf_program fp;
+    char filter_exp[] = "tcp or udp"; // Capture only TCP and UDP packets
+
+    if (pcap_compile(handle, &fp, filter_exp, 0, PCAP_NETMASK_UNKNOWN) == -1) {
+        fprintf(stderr, "Couldn't parse filter %s: %s\n", filter_exp, pcap_geterr(handle));
+        // Continue without filter if compilation fails
+        printf("⚠️  Filter compilation failed, capturing all packets.\n");
+    } else {
+        if (pcap_setfilter(handle, &fp) == -1) {
+            fprintf(stderr, "Couldn't install filter %s: %s\n", filter_exp, pcap_geterr(handle));
+            // Continue without filter if installation fails
+            printf("⚠️  Filter installation failed, capturing all packets.\n");
+        } else {
+            printf("✓ Packet filter applied: '%s'\n", filter_exp);
+        }
+        pcap_freecode(&fp);
+    }
+    printf("\n");
 
     // Capture packets (unlimited until interrupted)
     if (pcap_loop(handle, -1, packet_handler, NULL) < 0)
@@ -496,5 +741,6 @@ int main(int argc, char *argv[])
     printf("\nTutorial completed. Check the CSV file for dataset analysis.\n");
     printf("\nUsage: %s [pcap_file] - to analyze existing pcap files\n", argv[0]);
 
+    cleanup_resources();
     return 0;
 }
