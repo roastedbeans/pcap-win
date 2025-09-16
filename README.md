@@ -90,18 +90,43 @@ gcc -o packet_analyzer.exe packet_analyzer.c -lwpcap -lws2_32
 
 Right-click on Command Prompt → "Run as administrator"
 
-### Live Packet Capture
+### Interactive Interface
+
+The program now features an interactive menu for easy operation:
+
+1. **Choose Analysis Mode**: Select between live packet capture or PCAP file analysis
+2. **Interface Selection**: For live capture, choose from available network interfaces
+3. **File Input**: For PCAP analysis, enter the filename to analyze
+
+### Command Line Usage
+
+You can still bypass the interactive menu by providing a PCAP filename directly:
 
 ```bash
-# Capture 50 packets from default network interface
+# Analyze PCAP file directly (bypasses interactive menu)
+packet_analyzer.exe capture.pcap
+```
+
+### Live Packet Capture
+
+When choosing live capture mode interactively:
+
+```bash
 packet_analyzer.exe
+# Then follow the on-screen prompts:
+# 1. Choose "1" for live capture
+# 2. Select interface number from the list
 ```
 
 ### PCAP File Analysis
 
+When choosing PCAP analysis mode interactively:
+
 ```bash
-# Analyze existing PCAP file
-packet_analyzer.exe capture.pcap
+packet_analyzer.exe
+# Then follow the on-screen prompts:
+# 1. Choose "2" for PCAP analysis
+# 2. Enter the PCAP filename when prompted
 ```
 
 ## Output
@@ -116,6 +141,12 @@ packet_analyzer.exe capture.pcap
 
 - **Live capture**: `network_traffic_dataset.csv`
 - **File analysis**: `analysis_results.csv`
+
+**CSV Generation Process:**
+
+1. **Header Creation**: CSV file is initialized with headers before data collection begins
+2. **Periodic Append**: During live capture, new packet data is appended to the CSV file every 2 seconds
+3. **Final Save**: Complete dataset is saved at the end of capture/analysis
 
 **CSV Format:**
 
