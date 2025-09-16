@@ -8,18 +8,18 @@ ifeq ($(OS),Windows_NT)
     CC = gcc
     CFLAGS = -Wall -O2 -std=c99 -D_WIN32
     LDFLAGS = -lpcap -lws2_32 -liphlpapi
-    TARGET = scanlogd-simple.exe
+    TARGET = pcap-win.exe
     RM = del /Q
 else
     PLATFORM = UNIX
     CC = gcc
     CFLAGS = -Wall -O2 -std=c99
     LDFLAGS = -lpcap
-    TARGET = scanlogd-simple
+    TARGET = pcap-win
     RM = rm -f
 endif
 
-SOURCES = scanlogd-simple.c
+SOURCES = pcap-win.c
 
 # Default target
 all: $(TARGET)
@@ -61,11 +61,11 @@ endif
 	@echo ""
 	@echo "To run:"
 ifdef PLATFORM_WINDOWS
-	@echo "  scanlogd-simple.exe [interface]"
-	@echo "  Example: scanlogd-simple.exe \\Device\\NPF_{GUID}"
+	@echo "  pcap-win.exe [interface]"
+	@echo "  Example: pcap-win.exe \\Device\\NPF_{GUID}"
 else
-	@echo "  sudo ./scanlogd-simple [interface]"
-	@echo "  Example: sudo ./scanlogd-simple en0"
+	@echo "  sudo ./pcap-win [interface]"
+	@echo "  Example: sudo ./pcap-win en0"
 endif
 	@echo ""
 	@echo "Prerequisites:"
